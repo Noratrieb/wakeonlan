@@ -1,23 +1,96 @@
-// adapted from https://github.com/TeemuRemes/wake-on-lan-rust
+// wake on lan code adapted from https://github.com/TeemuRemes/wake-on-lan-rust
 
+use axum::{
+    http::StatusCode,
+    response::{Html, IntoResponse, Response},
+    routing::{get, post},
+    Router,
+};
+use eyre::{bail, Context, ContextCompat};
 use std::net::{Ipv4Addr, ToSocketAddrs, UdpSocket};
+use tracing_subscriber::EnvFilter;
 
-fn main() {
-    let mac_addr = std::env::args()
-        .nth(1)
-        .expect("first arg must be mac address");
-    let parts = mac_addr
-        .split(":")
-        .map(|part| u8::from_str_radix(part, 16).expect("invalid mac address"))
-        .collect::<Vec<_>>()
-        .as_slice()
-        .try_into()
-        .expect("invalid mac address");
+#[tokio::main]
+async fn main() {
+    // initialize tracing
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or(EnvFilter::new("info")))
+        .init();
 
-    let magic_packet = MagicPacket::new(&parts);
-    magic_packet.send().expect("failed to send packet");
+    // build our application with a route
+    let app = Router::new()
+        .route("/", get(async || Html(include_str!("../index.html"))))
+        .route("/wake", post(wake));
 
-    println!("Done!");
+    // run our app with hyper, listening globally on port 8090
+    let addr = "0.0.0.0:8090";
+    tracing::info!(?addr, "Starting server");
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+}
+
+async fn wake() -> Response {
+    tracing::info!("Waking");
+    match tokio::task::spawn_blocking(|| wake_inner()).await {
+        Ok(Ok(())) => (StatusCode::ACCEPTED, "sent packet").into_response(),
+        Ok(Err(e)) => {
+            tracing::error!(?e, "failed to wake");
+            (StatusCode::INTERNAL_SERVER_ERROR, "error").into_response()
+        }
+        Err(e) => {
+            tracing::error!(?e, "join error");
+            (StatusCode::INTERNAL_SERVER_ERROR, "failed to spawn").into_response()
+        }
+    }
+}
+
+fn wake_inner() -> eyre::Result<()> {
+    let hosts = load_possible_hosts()?;
+    let host = hosts
+        .iter()
+        .find(|(host, _)| host.contains("PC-Nora"))
+        .wrap_err_with(|| {
+            format!(
+                "failed to find host, found: {}",
+                hosts
+                    .iter()
+                    .map(|(host, _)| host.clone())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )
+        })?;
+    let magic_packet = MagicPacket::new(&host.1);
+    magic_packet.send().wrap_err("failed to send packet")?;
+
+    tracing::info!(hostname = %host.0, mac = ?host.1, "Woke up");
+
+    Ok(())
+}
+
+fn load_possible_hosts() -> eyre::Result<Vec<(String, [u8; 6])>> {
+    // TODO: It would be very cool to instead read /proc/net/arp and then call getnameinfo but that's annoying...
+    let arp = std::process::Command::new("arp")
+        .output()
+        .wrap_err("spwaning `arp`")?;
+    if !arp.status.success() {
+        bail!("arp failed: {}", String::from_utf8_lossy(&arp.stderr));
+    }
+    Ok(String::from_utf8(arp.stdout)
+        .wrap_err("arp returned non-utf-8 output")?
+        .lines()
+        .skip(1)
+        .map(|line| line.split_whitespace().collect::<Vec<_>>())
+        .map(|line_parts| {
+            let mac = line_parts[2]
+                .split(":")
+                .map(|part| u8::from_str_radix(part, 16).expect("invalid mac address"))
+                .collect::<Vec<_>>()
+                .as_slice()
+                .try_into()
+                .expect("invalid mac address");
+            (line_parts[0].to_owned(), mac)
+        })
+        .collect())
 }
 
 /// A Wake-on-LAN magic packet.

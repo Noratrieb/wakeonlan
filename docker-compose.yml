@@ -1,0 +1,7 @@
+services:
+  wakeonlan:
+    image: ghcr.io/noratrieb/wakeonlan:latest
+    container_name: wakeonlan
+    restart: unless-stopped
+    ports:
+      - 8090:8090

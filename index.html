@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wake on LAN</title>
+    <style>
+      html {
+        font-family: sans-serif;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      .wrapper {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        justify-content: center;
+        align-items: center;
+        width: 100%;
+        height: 100%;
+      }
+      .wake-button {
+        height: 200px;
+        width: 300px;
+        font-size: 48pt;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+      <h1>Wake on LAN</h1>
+      <button class="wake-button">WAKE</button>
+    </div>
+    <script type="module">
+      document.querySelector(".wake-button").addEventListener("click", () => {
+        fetch("/wake", {
+          method: "POST",
+        });
+      });
+    </script>
+  </body>
+</html>
