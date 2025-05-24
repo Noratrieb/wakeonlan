@@ -47,24 +47,24 @@ async fn wake() -> Response {
 fn wake_inner() -> eyre::Result<()> {
     let hosts = load_possible_hosts()?;
     let host = hosts
-        .iter()
+        .into_iter()
         .find(|(host, _)| host.contains("PC-Nora"))
-        .wrap_err_with(|| {
-            format!(
-                "failed to find host, found: {}",
-                hosts
-                    .iter()
-                    .map(|(host, _)| host.clone())
-                    .collect::<Vec<_>>()
-                    .join(",")
-            )
-        })?;
+        .unwrap_or_else(|| ("PC-Nora".into(), parse_mac_addr("00:d8:61:ca:3a:18")))?;
     let magic_packet = MagicPacket::new(&host.1);
     magic_packet.send().wrap_err("failed to send packet")?;
 
     tracing::info!(hostname = %host.0, mac = ?host.1, "Woke up");
 
     Ok(())
+}
+
+fn parse_mac_addr(addr: &str) -> [u8; 6] {
+    addr.split(":")
+        .map(|part| u8::from_str_radix(part, 16).expect("invalid mac address"))
+        .collect::<Vec<_>>()
+        .as_slice()
+        .try_into()
+        .expect("invalid mac address")
 }
 
 fn load_possible_hosts() -> eyre::Result<Vec<(String, [u8; 6])>> {
@@ -81,13 +81,7 @@ fn load_possible_hosts() -> eyre::Result<Vec<(String, [u8; 6])>> {
         .skip(1)
         .map(|line| line.split_whitespace().collect::<Vec<_>>())
         .map(|line_parts| {
-            let mac = line_parts[2]
-                .split(":")
-                .map(|part| u8::from_str_radix(part, 16).expect("invalid mac address"))
-                .collect::<Vec<_>>()
-                .as_slice()
-                .try_into()
-                .expect("invalid mac address");
+            let mac = parse_mac_addr(line_parts[2]);
             (line_parts[0].to_owned(), mac)
         })
         .collect())
