@@ -6,7 +6,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use eyre::{bail, Context, ContextCompat};
+use eyre::{bail, Context};
 use std::net::{Ipv4Addr, ToSocketAddrs, UdpSocket};
 use tracing_subscriber::EnvFilter;
 
@@ -49,7 +49,7 @@ fn wake_inner() -> eyre::Result<()> {
     let host = hosts
         .into_iter()
         .find(|(host, _)| host.contains("PC-Nora"))
-        .unwrap_or_else(|| ("PC-Nora".into(), parse_mac_addr("00:d8:61:ca:3a:18")))?;
+        .unwrap_or_else(|| ("PC-Nora".into(), parse_mac_addr("00:d8:61:ca:3a:18")));
     let magic_packet = MagicPacket::new(&host.1);
     magic_packet.send().wrap_err("failed to send packet")?;
 
